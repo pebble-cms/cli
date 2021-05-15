@@ -3,14 +3,18 @@
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 import click
 import requests
+from click.core import Option
 from dateutil.parser import parse as parse_time_str
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=f"{Path.home()}/.config/pebble-cms/config")
+load_dotenv(override=True)
+
 PEBBLE_API_ENDPOINT = os.getenv("PEBBLE_API_ENDPOINT", "https://pebble.ggicci.me")
 PEBBLE_TOKEN = os.getenv("PEBBLE_TOKEN")
 PEBBLE_NAMESPACE = os.getenv("PEBBLE_NAMESPACE")
@@ -87,7 +91,7 @@ class Pagination:
 
 
 class Pebble:
-    PATCHABLE_FIELDS = ("title", "state_id", "tags", "content")
+    PATCHABLE_FIELDS = ("title", "state_id", "tags", "content", "kind")
 
     def __init__(self):
         self.id: str = None
@@ -113,12 +117,6 @@ class Pebble:
     def __str__(self):
         return f"Pebble#{self.id}"
 
-    def patch(self, patch: dict) -> "Pebble":
-        payload = {k: v for k, v in patch.items() if k in self.PATCHABLE_FIELDS}
-        resp = CLIENT.patch(api_url(f"/v1/pebbles/{self.id}"), data=payload)
-        resp.raise_for_status()
-        return Pebble.fetch(self.id)
-
     def to_json(self, compact=True) -> str:
         """Returns a JSON representation of the pebble."""
         if compact is True:
@@ -126,21 +124,9 @@ class Pebble:
         return json.dumps(json_serializable(self.__dict__), indent=4)
 
     @classmethod
-    def create(
-        cls,
-        title: str,
-        content: Optional[str],
-        kind: Optional[str],
-        tags: Optional[List[str]],
-        nuid: Optional[str],
-    ) -> "Pebble":
-        payload = {
-            "title": title,
-            "content": content,
-            "kind": kind,
-            "tags": tags,
-            "nuid": nuid,
-        }
+    def create(cls, title: str, **kwargs) -> "Pebble":
+        payload = {"title": title}
+        payload.update(kwargs)
         resp = CLIENT.post(
             api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles"), json=payload
         )
@@ -151,11 +137,11 @@ class Pebble:
 
     @classmethod
     def fetch(
-        cls, pid: str, nuid: Optional[str], meta_only: Optional[bool] = False
+        cls, pid: str, nuid: Optional[str] = None, meta_only: bool = False
     ) -> "Pebble":
         """Fetch a pebble from remote by pebble's id or nuid inside current namespace."""
         url = (
-            api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles/{nuid}")
+            api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles/by-nuid/{nuid}")
             if nuid
             else api_url(f"/v1/pebbles/{pid}")
         )
@@ -171,6 +157,18 @@ class Pebble:
         # TODO(ggicci): pagination
         pebbles = [cls.from_json(x) for x in resp.json()]
         return pebbles, None
+
+    @classmethod
+    def update(cls, pid: str, nuid: Optional[str], **kwargs) -> "Pebble":
+        payload = {k: v for k, v in kwargs.items() if k in cls.PATCHABLE_FIELDS}
+        resp = CLIENT.patch(
+            api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles/{pid}")
+            if pid
+            else api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles/by-nuid/{nuid}"),
+            json=payload,
+        )
+        resp.raise_for_status()
+        return cls.fetch(pid, nuid, meta_only=False)
 
     @classmethod
     def from_json(cls, json_data: dict):
@@ -221,17 +219,17 @@ def list_states():
 
 @click.command()
 @click.argument("title")
-@click.option("--content", default="", help="Content of the pebble")
-@click.option(
-    "--kind", default="", help="Kind of the pebble, e.g. python, image, receipt, etc."
-)
-@click.option("--tags", default="", help='Tags separated by comma, e.g. "docker,k8s"')
-@click.option("--nuid", default="", help="Custom unique ID")
-def create_pebble(title, kind, content, tags, nuid):
+@click.option("--content", help="Content of the pebble")
+@click.option("--kind", help="Kind of the pebble, e.g. python, image, receipt, etc.")
+@click.option("--state-id", help="State ID")
+@click.option("--tags", help='Tags separated by comma, e.g. "docker,k8s"')
+@click.option("--nuid", help="Custom unique ID")
+def create_pebble(title, kind, content, tags, nuid, state_id):
     """Create a pebble"""
-    click.echo(f"Creating 「{title}」{ nuid if nuid else '' }")
     ntags = [x.strip() for x in tags.split(",") if x.strip() != ""]
-    pebble = Pebble.create(title, content, kind, ntags, nuid)
+    pebble = Pebble.create(
+        title, content=content, kind=kind, tags=ntags, nuid=nuid, state_id=state_id
+    )
     click.echo(pebble.to_json(compact=False))
 
 
@@ -274,7 +272,7 @@ def list_pebbles():
                 pebble.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 pebble.nuid,
                 pebble.title,
-                "-" if pebble.state is None else pebble.state.name,
+                "-" if pebble.state is None else pebble.state.display,
                 ",".join(pebble.tags),
             ]
         )
@@ -283,10 +281,18 @@ def list_pebbles():
 
 @click.command()
 @click.argument("pid", required=False)
-@click.option("--nuid", type=str, default="", help="Custom unique ID")
-def update_pebble(pid, nuid):
+@click.option("--content", help="Content of the pebble")
+@click.option("--kind", help="Kind of the pebble, e.g. python, image, receipt, etc.")
+@click.option("--state-id", help="State ID")
+@click.option("--tags", help='Tags separated by comma, e.g. "docker,k8s"')
+@click.option("--nuid", default="", help="Use custom unique ID to locate the pebble")
+def update_pebble(pid, nuid, content, kind, state_id, tags):
     """Update a pebble"""
-    pass
+    ntags = [x.strip() for x in tags.split(",") if x.strip() != ""]
+    pebble = Pebble.update(
+        pid, nuid, content=content, kind=kind, tags=ntags, state_id=state_id
+    )
+    click.echo(pebble.to_json(compact=False))
 
 
 @click.command()
