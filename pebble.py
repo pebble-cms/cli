@@ -160,7 +160,11 @@ class Pebble:
 
     @classmethod
     def update(cls, pid: str, nuid: Optional[str], **kwargs) -> "Pebble":
-        payload = {k: v for k, v in kwargs.items() if k in cls.PATCHABLE_FIELDS}
+        payload = {
+            k: v
+            for k, v in kwargs.items()
+            if k in cls.PATCHABLE_FIELDS and v is not None
+        }
         resp = CLIENT.patch(
             api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles/{pid}")
             if pid
@@ -235,7 +239,7 @@ def create_pebble(title, kind, content, tags, nuid, state_id):
 
 @click.command()
 @click.argument("pid", required=False)
-@click.option("--nuid", default="", help="Custom unique ID")
+@click.option("--nuid", help="Custom unique ID")
 @click.option("--meta-only", type=bool, is_flag=True, help="Fetch without content")
 def get_pebble(pid: str, nuid: str, meta_only: bool):
     """Get a pebble"""
@@ -285,7 +289,7 @@ def list_pebbles():
 @click.option("--kind", help="Kind of the pebble, e.g. python, image, receipt, etc.")
 @click.option("--state-id", help="State ID")
 @click.option("--tags", help='Tags separated by comma, e.g. "docker,k8s"')
-@click.option("--nuid", default="", help="Use custom unique ID to locate the pebble")
+@click.option("--nuid", help="Use custom unique ID to locate the pebble")
 def update_pebble(pid, nuid, content, kind, state_id, tags):
     """Update a pebble"""
     ntags = [x.strip() for x in tags.split(",") if x.strip() != ""]
@@ -297,7 +301,7 @@ def update_pebble(pid, nuid, content, kind, state_id, tags):
 
 @click.command()
 @click.argument("pid", required=False)
-@click.option("--nuid", type=str, default="", help="Custom unique ID")
+@click.option("--nuid", type=str, help="Custom unique ID")
 def delete_pebble(pid: str, nuid: str):
     """Delete a pebble"""
     pass
