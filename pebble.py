@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union
 
 import click
 import requests
@@ -46,7 +46,7 @@ def __display_key_values(kvs: dict) -> None:
         click.echo(f"{k.ljust(max_length + 1)}: {v}")
 
 
-def display_api_error(resp) -> None:
+def exit_on_api_error(resp) -> None:
     if 200 <= resp.status_code < 300:
         return
 
@@ -97,7 +97,7 @@ class State:
     @classmethod
     def list(cls) -> List["State"]:
         resp = CLIENT.get(api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/states"))
-        display_api_error(resp)
+        exit_on_api_error(resp)
         state_list = []
         for item in resp.json():
             state_list.append(cls.from_json(item))
@@ -148,30 +148,48 @@ class Pebble:
         resp = CLIENT.post(
             api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles"), json=payload
         )
-        display_api_error(resp)
+        exit_on_api_error(resp)
         new_resp = CLIENT.get(api_url(resp.headers.get("Location")))
-        new_display_api_error(resp)
+        new_exit_on_api_error(resp)
         return cls.from_json(new_resp.json())
 
     @classmethod
     def fetch(
-        cls, pid: str, nuid: Optional[str] = None, meta_only: bool = False
-    ) -> "Pebble":
-        """Fetch a pebble from remote by pebble's id or nuid inside current namespace."""
+        cls,
+        pid: str,
+        nuid: Optional[str] = None,
+        meta_only: bool = False,
+        content_only: bool = False,
+    ) -> Union["Pebble", str]:
+        """Fetch a pebble from remote by pebble's id or nuid.
+
+        Args:
+            pid: The id of the pebble
+            nuid: The custom unique id of the pebble
+            meta_only: Fetch meta info only
+            content_only: Fetch content only
+
+        Returns:
+            A Pebble instance or just content of the Pebble when content_only is True
+        """
         url = (
             api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles/by-nuid/{nuid}")
             if nuid
             else api_url(f"/v1/pebbles/{pid}")
         )
-        resp = CLIENT.get(url, params={"meta_only": meta_only})
-        display_api_error(resp)
+        resp = CLIENT.get(
+            url, params={"meta_only": meta_only, "content_only": content_only}
+        )
+        exit_on_api_error(resp)
+        if content_only:
+            return resp.text
         return cls.from_json(resp.json())
 
     @classmethod
     def list(cls) -> Tuple[List["Pebble"], Pagination]:
         """List pebbles."""
         resp = CLIENT.get(api_url(f"/v1/namespaces/{PEBBLE_NAMESPACE}/pebbles"))
-        display_api_error(resp)
+        exit_on_api_error(resp)
         # TODO(ggicci): pagination
         pebbles = [cls.from_json(x) for x in resp.json()]
         return pebbles, None
@@ -191,7 +209,7 @@ class Pebble:
             ),
             json=payload,
         )
-        display_api_error(resp)
+        exit_on_api_error(resp)
         return cls.fetch(pid, by_nuid, meta_only=False)
 
     @classmethod
@@ -278,11 +296,11 @@ def get_pebble(pid: str, by_nuid: str, meta_only: bool, content_only: bool) -> N
         pid,
         by_nuid,
         meta_only=meta_only,
-        # content_only=content_only,
+        content_only=content_only,
     )
 
     if content_only:
-        click.echo(pebble.content)
+        click.echo(pebble)
         return
 
     click.echo(pebble.to_json(compact=False))
