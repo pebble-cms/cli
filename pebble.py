@@ -341,24 +341,32 @@ def list_pebbles():
 @click.command()
 @click.argument("pid", required=False)
 @click.option("--by-nuid", help="Use custom unique ID to locate the pebble")
-@click.option("--content", help="Content of the pebble")
-@click.option("--kind", help="Kind of the pebble, e.g. python, image, receipt, etc.")
 @click.option("--state-id", type=int, help="State ID")
+@click.option("--title", help="Pebble title")
+@click.option("--content", help="Pebble content")
 @click.option("--tags", help='Tags separated by comma, e.g. "docker,k8s"')
+@click.option("--kind", help="Pebble kind, e.g. python, markdown, image, etc.")
 @click.option("--nuid", help="Custom unique ID")
-def update_pebble(pid, by_nuid, content, kind, state_id, tags, nuid):
+def update_pebble(pid, by_nuid, title, content, kind, state_id, tags, nuid):
     """Update a pebble"""
+    if not pid and not by_nuid:
+        click.echo("ERROR: empty PID and NUID\n")
+        click.echo(click.get_current_context().get_help())
+        return 1
+
     ntags = (
         tags
         if tags is None
         else [x.strip() for x in tags.split(",") if x.strip() != ""]
     )
+
     pebble = Pebble.update(
         pid,
         by_nuid,
+        state_id=state_id,
+        title=title,
         content=content,
         kind=kind,
-        state_id=state_id,
         tags=ntags,
         nuid=nuid,
     )
