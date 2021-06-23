@@ -150,7 +150,7 @@ class Pebble:
         )
         exit_on_api_error(resp)
         new_resp = CLIENT.get(api_url(resp.headers.get("Location")))
-        new_exit_on_api_error(resp)
+        exit_on_api_error(resp)
         return cls.from_json(new_resp.json())
 
     @classmethod
