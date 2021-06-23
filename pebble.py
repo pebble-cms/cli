@@ -40,13 +40,21 @@ def json_serializable(obj: Any) -> Any:
     return obj
 
 
+def __display_key_values(kvs: dict) -> None:
+    max_length = max(len(x) for x in kvs.keys())
+    for (k, v) in kvs.items():
+        click.echo(f"{k.ljust(max_length + 1)}: {v}")
+
+
 def display_api_error(resp) -> None:
-    if not (200 <= resp.status_code < 300):
-        max_length = max(len(x) for x in resp.headers.keys())
-        for (k, v) in resp.headers.items():
-            click.echo(f"{k.rjust(max_length + 1)}: {v}")
-        click.secho(resp.text, fg="red")
-        sys.exit(1)
+    if 200 <= resp.status_code < 300:
+        return
+
+    kvs = {"Status": resp.status_code}
+    kvs.update(resp.headers.items())
+    __display_key_values(kvs)
+    click.secho(resp.text, fg="red")
+    sys.exit(1)
 
 
 class State:
@@ -184,7 +192,7 @@ class Pebble:
             json=payload,
         )
         display_api_error(resp)
-        return cls.fetch(pid, nuid, meta_only=False)
+        return cls.fetch(pid, by_nuid, meta_only=False)
 
     @classmethod
     def from_json(cls, json_data: dict):
@@ -237,7 +245,7 @@ def list_states():
 @click.argument("title")
 @click.option("--content", help="Content of the pebble")
 @click.option("--kind", help="Kind of the pebble, e.g. python, image, receipt, etc.")
-@click.option("--state-id", help="State ID")
+@click.option("--state-id", type=int, help="State ID")
 @click.option("--tags", help='Tags separated by comma, e.g. "docker,k8s"')
 @click.option("--nuid", help="Custom unique ID")
 def create_pebble(title, kind, content, tags, state_id, nuid):
@@ -257,13 +265,26 @@ def create_pebble(title, kind, content, tags, state_id, nuid):
 @click.argument("pid", required=False)
 @click.option("--by-nuid", help="Custom unique ID")
 @click.option("--meta-only", type=bool, is_flag=True, help="Fetch without content")
-def get_pebble(pid: str, by_nuid: str, meta_only: bool):
+@click.option("--content-only", type=bool, is_flag=True, help="Fetch content only")
+def get_pebble(pid: str, by_nuid: str, meta_only: bool, content_only: bool) -> None:
     """Get a pebble"""
     if not pid and not by_nuid:
         click.echo("ERROR: empty PID and NUID\n")
         click.echo(click.get_current_context().get_help())
         return 1
-    pebble = Pebble.fetch(pid, by_nuid, meta_only=meta_only)
+
+    content_only = not meta_only and content_only
+    pebble = Pebble.fetch(
+        pid,
+        by_nuid,
+        meta_only=meta_only,
+        # content_only=content_only,
+    )
+
+    if content_only:
+        click.echo(pebble.content)
+        return
+
     click.echo(pebble.to_json(compact=False))
 
 
@@ -304,7 +325,7 @@ def list_pebbles():
 @click.option("--by-nuid", help="Use custom unique ID to locate the pebble")
 @click.option("--content", help="Content of the pebble")
 @click.option("--kind", help="Kind of the pebble, e.g. python, image, receipt, etc.")
-@click.option("--state-id", help="State ID")
+@click.option("--state-id", type=int, help="State ID")
 @click.option("--tags", help='Tags separated by comma, e.g. "docker,k8s"')
 @click.option("--nuid", help="Custom unique ID")
 def update_pebble(pid, by_nuid, content, kind, state_id, tags, nuid):
