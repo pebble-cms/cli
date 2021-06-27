@@ -104,7 +104,20 @@ class State:
         return state_list
 
 
+class User:
+    def __init__(self):
+        self.id: str = None
+        # TODO(ggicci):
+
+
+class Namespace:
+    def __init__(self):
+        self.id: str = None
+        # TODO(ggicci):
+
+
 class Pagination:
+    # TODO(ggicci): pagination for listing API
     pass
 
 
@@ -129,8 +142,9 @@ class Pebble:
         self.permalink: str = None
         self.content: str = None
         self.storage_provider: str = None
-        self.owner = None
+        self.owner: "User" = None
         self.state: "State" = None
+        self.namespace: "Namespace" = None
 
     def __str__(self):
         return f"Pebble#{self.id}"
